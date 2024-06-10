@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Match3.App.Interfaces;
 using Match3.Core.Interfaces;
 using Match3.Core.Structs;
@@ -17,6 +19,7 @@ namespace Match3.App.Internal
         private int _achievedGoals;
 
         private LevelGoal<TGridSlot>[] _levelGoals;
+        private int[,] _beforeChangeGridIds;
 
         protected BaseGame(GameConfig<TGridSlot> config)
         {
@@ -40,8 +43,27 @@ namespace Match3.App.Internal
                 throw new InvalidOperationException("Can not be initialized while the current game is active.");
             }
 
-            _gameBoard.SetGridSlots(_gameBoardDataProvider.GetGameBoardSlots(level));
+            TGridSlot[,] gridSlots = _gameBoardDataProvider.GetGameBoardSlots(level);
+            _gameBoard.SetGridSlots(gridSlots);
+
+            InitMemoryGridIds(gridSlots);
             _levelGoals = _levelGoalsProvider.GetLevelGoals(level, _gameBoard);
+        }
+
+        private void InitMemoryGridIds(TGridSlot[,] gridSlots)
+        {
+            _beforeChangeGridIds = new int[gridSlots.GetLength(0), gridSlots.GetLength(1)];
+
+            for (int rowIndex = 0; rowIndex < _gameBoard.RowCount; rowIndex++)
+            {
+                for (int collumnIndex = 0; collumnIndex < _gameBoard.ColumnCount; collumnIndex++)
+                {
+                    if (gridSlots[rowIndex, collumnIndex].HasItem)
+                    {
+                        _beforeChangeGridIds[rowIndex, collumnIndex] = gridSlots[rowIndex, collumnIndex].ItemId;
+                    }
+                }
+            }
         }
 
         protected void StartGame()
@@ -94,6 +116,34 @@ namespace Match3.App.Internal
         {
             solvedData = _gameBoardSolver.Solve(GameBoard, position1, position2);
             return solvedData.SolvedSequences.Count > 0;
+        }
+
+
+        protected bool IsSolveExistOnBoard(out SolvedData<TGridSlot> solvedData)
+        {
+            solvedData = _gameBoardSolver.Solve(GameBoard, GetUppdatedGridPositions().ToArray());
+            return solvedData.SolvedSequences.Count > 0;
+        }
+
+        private IEnumerable<GridPosition> GetUppdatedGridPositions()
+        {
+            for (int rowIndex = 0; rowIndex < _gameBoard.RowCount; rowIndex++)
+            {
+                for (int collumnIndex = 0; collumnIndex < _gameBoard.ColumnCount; collumnIndex++)
+                {
+                    if (_gameBoard[rowIndex, collumnIndex].HasItem)
+                    {
+                        int oldSlotId = _beforeChangeGridIds[rowIndex, collumnIndex];
+                        TGridSlot currentSlot = _gameBoard[rowIndex, collumnIndex];
+                        bool isNewItem = oldSlotId != currentSlot.ItemId;
+                        if (isNewItem)
+                        {
+                            _beforeChangeGridIds[rowIndex, collumnIndex] = currentSlot.ItemId;
+                            yield return currentSlot.GridPosition;
+                        }
+                    }
+                }
+            }
         }
 
         protected void NotifySequencesSolved(SolvedData<TGridSlot> solvedData)
